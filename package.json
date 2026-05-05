@@ -1,0 +1,34 @@
+{
+  "name": "robertson-doctrine",
+  "version": "1.0.0",
+  "description": "Interactive Fed monetary policy analysis dashboard — live FRED data, Trimmed Mean CPI vs Headline vs Core, Taylor Rule calculator, and FOMC simulator.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "lint": "npx --yes eslint public/app.js server.js"
+  },
+  "keywords": [
+    "monetary-policy",
+    "federal-reserve",
+    "cpi",
+    "inflation",
+    "fred",
+    "taylor-rule",
+    "economics",
+    "fomc",
+    "trimmed-mean",
+    "warsh"
+  ],
+  "author": "Robertson Doctrine Project",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "node-fetch": "^2.7.0"
+  }
+}

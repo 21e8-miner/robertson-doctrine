@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Robertson Doctrine — Interactive Fed Analysis</title>
+    <meta name="description" content="Real-time interactive monetary policy analysis. Trimmed Mean CPI vs Headline vs Core with live FRED data, Taylor Rule calculator, and FOMC decision simulator.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- LIVE DATA STATUS BAR -->
+<div class="live-bar" id="live-bar">
+    <div class="live-bar-inner">
+        <span class="live-dot"></span>
+        <span id="live-status">Connecting to FRED…</span>
+        <span class="live-spacer"></span>
+        <span id="live-ts" class="live-ts"></span>
+    </div>
+</div>
+
+<!-- HERO -->
+<section class="hero" id="hero">
+    <div class="hero-content">
+        <div class="hero-eyebrow">Monetary Policy Analysis · <span id="hero-date">May 2026</span></div>
+        <h1>The Robertson Doctrine</h1>
+        <p class="hero-sub">A practitioner's case for rules-based, data-driven monetary policy under the Warsh Fed</p>
+        <div class="hero-quote">
+            "Inflation expectations is something invented post GFC by the Neo-Wicksell Fed doxology. Warsh will return the Fed to reactionary function, dropping Fed Funds quickly to 3%. The CPI Trimmed Mean is not a ruse but the best inflation gauge."
+            <span class="attribution">— George Robertson, May 5, 2026</span>
+        </div>
+        <!-- Live Ticker Cards -->
+        <div class="hero-ticker" id="hero-ticker">
+            <div class="ticker-card" id="tick-trimmed"><div class="ticker-label">16% Trimmed Mean</div><div class="ticker-val gold" id="tv-trimmed">—</div><div class="ticker-sub" id="ts-trimmed">Loading…</div></div>
+            <div class="ticker-card" id="tick-headline"><div class="ticker-label">Headline CPI</div><div class="ticker-val red" id="tv-headline">—</div><div class="ticker-sub" id="ts-headline">Loading…</div></div>
+            <div class="ticker-card" id="tick-core"><div class="ticker-label">Core CPI</div><div class="ticker-val blue" id="tv-core">—</div><div class="ticker-sub" id="ts-core">Loading…</div></div>
+            <div class="ticker-card" id="tick-ff"><div class="ticker-label">Fed Funds Rate</div><div class="ticker-val green" id="tv-ff">—</div><div class="ticker-sub" id="ts-ff">Loading…</div></div>
+        </div>
+    </div>
+    <div class="scroll-hint" onclick="document.getElementById('evidence').scrollIntoView({behavior:'smooth'})">
+        <span>Scroll to explore</span>
+        <div class="arrow"></div>
+    </div>
+</section>
+
+<!-- EVIDENCE: INFLATION CHARTS -->
+<section class="chart-section fade-in" id="evidence">
+    <div class="container">
+        <div class="section-label">Chapter 1 <span class="data-source-badge">Live FRED Data</span></div>
+        <h2 class="section-title">The Evidence: Trimmed Mean vs. Headline vs. Core</h2>
+        <div class="section-divider"></div>
+        <p class="section-sub">Cleveland Fed 16% trimmed-mean CPI strips the highest and lowest 8% of components — extracting trend inflation without arbitrary exclusions.</p>
+        <div class="chart-controls">
+            <button class="chart-btn active" onclick="setChartView('long',this)" id="btn-long">2014–2026 Long View</button>
+            <button class="chart-btn" onclick="setChartView('zoom',this)" id="btn-zoom">2022–2026 Zoom</button>
+            <button class="chart-btn" onclick="setChartView('close',this)" id="btn-close">2025–2026 Close-Up</button>
+            <button class="chart-btn" onclick="setChartView('fedfunds',this)" id="btn-ff">+ Fed Funds Overlay</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="inflationChart" height="420"></canvas>
+            <div class="chart-legend-custom" id="chart-legend"></div>
+        </div>
+        <div class="chart-insight-box">
+            <span class="icon">💡</span>
+            <div>
+                <h4>Why Trimmed Mean Wins</h4>
+                <p id="insight-text">The 16% trimmed mean symmetrically drops outliers (used cars, energy, pandemic distortions) without the fixed exclusions of "core." Empirical work from the Dallas and Cleveland Feds shows it has the <strong style="color:var(--text);">strongest signal-to-noise ratio</strong> for underlying inflation pressure.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- SPREAD ANALYSIS (NEW) -->
+<section class="fade-in" id="spread">
+    <div class="container">
+        <div class="section-label">Chapter 1b <span class="data-source-badge">Computed</span></div>
+        <h2 class="section-title">Headline–Trimmed Mean Spread</h2>
+        <div class="section-divider"></div>
+        <p class="section-sub">When headline exceeds trimmed mean, transitory shocks (energy, food) are inflating the number. A positive spread = more room to cut.</p>
+        <div class="chart-container">
+            <canvas id="spreadChart" height="300"></canvas>
+        </div>
+    </div>
+</section>
+
+<!-- DOCTRINE CARDS -->
+<section class="fade-in" id="doctrine">
+    <div class="container">
+        <div class="section-label">Chapter 2</div>
+        <h2 class="section-title">Neo-Wicksellian Doctrine vs. Reactionary Function</h2>
+        <div class="section-divider"></div>
+        <p class="section-sub">Robertson argues post-GFC monetary policy became an expectations-management game.</p>
+        <div class="doctrine-grid">
+            <div class="doctrine-card" onclick="flipCard(this)">
+                <div class="tag">Post-GFC Invention</div>
+                <h3>"Inflation Expectations"</h3>
+                <p>Pre-GFC, expectations played a role but were less dominant. At the zero lower bound, the Fed turned expectations into the <em>primary</em> transmission channel.</p>
+                <div class="card-back"><p>Surveys (Michigan) and TIPS breakevens do influence wage/price setting. Dismissing them entirely ignores forward-looking behavior — but their post-GFC elevation to primary policy lever is Robertson's target.</p></div>
+                <div class="flip-indicator">Click to flip →</div>
+            </div>
+            <div class="doctrine-card" onclick="flipCard(this)">
+                <div class="tag">Academic Construct</div>
+                <h3>Neo-Wicksellian Models</h3>
+                <p>Modern DSGE frameworks (Woodford et al.) distinguish the "natural" real rate from the market rate. The Fed sets policy to close the gap.</p>
+                <div class="card-back"><p>These models struggled with post-GFC lowflation and the 2021–2022 surge. Robertson calls it a "device" — a constructed lens where models dominate over data.</p></div>
+                <div class="flip-indicator">Click to flip →</div>
+            </div>
+            <div class="doctrine-card" onclick="flipCard(this)">
+                <div class="tag">Warsh Proposal</div>
+                <h3>Reactionary Function</h3>
+                <p>Drop forward guidance. Each FOMC meeting is a fresh proposition based purely on contemporaneous data. No dot plots telegraphing the future.</p>
+                <div class="card-back"><p>This reduces credibility risk when conditions change. But markets may overreact. The trade-off: clarity of rules vs. flexibility of discretion.</p></div>
+                <div class="flip-indicator">Click to flip →</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- TAYLOR RULE CALCULATOR -->
+<section class="taylor-section fade-in" id="prescription">
+    <div class="container">
+        <div class="section-label">Chapter 3 <span class="data-source-badge">Interactive</span></div>
+        <h2 class="section-title">The Taylor / Yellen Rule Calculator</h2>
+        <div class="section-divider"></div>
+        <p class="section-sub">Sliders pre-populated with <strong>live FRED data</strong>. Adjust to see how rules-based frameworks prescribe rates.</p>
+        <div class="taylor-grid">
+            <div>
+                <div class="slider-group"><label>Trimmed-Mean Inflation (π) <span class="val" id="val-pi">—</span></label><input type="range" id="pi" min="0" max="10" step="0.1" value="2.6" oninput="updateTaylor()"></div>
+                <div class="slider-group"><label>Target Inflation (π*) <span class="val" id="val-pistar">2.00%</span></label><input type="range" id="pistar" min="0" max="4" step="0.25" value="2.0" oninput="updateTaylor()"></div>
+                <div class="slider-group"><label>Output Gap (%) <span class="val" id="val-gap">0.5%</span></label><input type="range" id="gap" min="-3" max="3" step="0.1" value="0.5" oninput="updateTaylor()"></div>
+                <div class="slider-group"><label>Equilibrium Real Rate (r*) <span class="val" id="val-rstar">0.5%</span></label><input type="range" id="rstar" min="-1" max="3" step="0.1" value="0.5" oninput="updateTaylor()"></div>
+                <div class="slider-group"><label>Rule Variant</label><select id="rule" onchange="updateTaylor()"><option value="taylor">Classic Taylor (1993)</option><option value="yellen">Yellen Balanced (2015)</option><option value="warsh">Warsh Aggressive</option></select></div>
+            </div>
+            <div class="taylor-result">
+                <div class="label">Prescribed Fed Funds Rate</div>
+                <div class="big-number" id="taylor-result">—</div>
+                <div class="forecast-note" id="taylor-note">Robertson's forecast: ~3.0% under Warsh</div>
+                <div class="taylor-vs" id="taylor-vs"></div>
+                <div class="taylor-formula" id="taylor-formula"></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 50/50 COIN FLIP -->
+<section class="tree-section fade-in" id="simulator">
+    <div class="container">
+        <div class="section-label">Chapter 4</div>
+        <h2 class="section-title">The 50/50 Tree</h2>
+        <div class="section-divider" style="margin:0 auto 1.5rem;"></div>
+        <p class="section-sub" style="margin:0 auto 2rem;">Rate decisions should feel like a coin flip each meeting — purely data-dependent, no forward guidance.</p>
+        <div class="coin-container" onclick="flipCoin()" title="Click to flip"><div class="coin-glow"></div><div class="coin" id="coin"><div class="coin-face coin-front">CUT</div><div class="coin-face coin-back">HOLD</div></div></div>
+        <div class="coin-result" id="coin-result">Click the coin to simulate an FOMC decision</div>
+        <div class="fomc-timeline" id="fomc-timeline">
+            <div class="fomc-dot active"><span class="month">Jan</span></div><div class="fomc-dot"><span class="month">Mar</span></div><div class="fomc-dot"><span class="month">May</span></div><div class="fomc-dot"><span class="month">Jul</span></div><div class="fomc-dot"><span class="month">Sep</span></div><div class="fomc-dot"><span class="month">Nov</span></div><div class="fomc-dot"><span class="month">Dec</span></div>
+        </div>
+        <p class="fomc-label">Each meeting: independent, data-driven, no forward guidance. The dot plot dies here.</p>
+    </div>
+</section>
+
+<!-- STEEL-MAN / STRAW-MAN -->
+<section class="fade-in" id="verdict">
+    <div class="container">
+        <div class="section-label">Chapter 5</div>
+        <h2 class="section-title">Steel-Man / Straw-Man</h2>
+        <div class="section-divider"></div>
+        <p class="section-sub">Robertson's view is credible and chart-backed — but no framework is without trade-offs.</p>
+        <div class="steel-straw-grid">
+            <div class="steel-straw-card strengths"><h3 style="color:var(--accent-2);">✓ Strengths</h3><ul><li>Trimmed mean is empirically superior in noisy times</li><li>Clear reaction function improves market predictability</li><li>Reduces credibility risk from forward guidance</li><li>Aligns with pre-GFC "rules vs. discretion" literature</li><li>Timely: trimmed mean justifies path to neutral rate</li></ul></div>
+            <div class="steel-straw-card limitations"><h3 style="color:var(--accent-3);">✗ Limitations</h3><ul><li>Expectations aren't purely "invented" — they matter empirically</li><li>Taylor rules failed real-time tests (prescribed tightness in 2008–09)</li><li>Output gaps are notoriously hard to measure in real time</li><li>Warsh operates in a politicized environment</li><li>Quick easing risks re-igniting inflation if supply shocks return</li></ul></div>
+        </div>
+    </div>
+</section>
+
+<!-- BOTTOM LINE -->
+<section class="bottom-line-section fade-in" id="bottom-line">
+    <div class="container">
+        <div class="section-label">Conclusion</div>
+        <h2 class="section-title">Bottom Line</h2>
+        <div class="section-divider" style="margin:0 auto 1.5rem;"></div>
+        <p class="bottom-line-text">Robertson's thread is a concise, chart-backed plea for humility in monetary policy: use the cleanest inflation signal, react to data <em>now</em> rather than promise the future, and let rules guide rather than models dominate.</p>
+        <div class="stats-card">
+            <div class="stat-row">
+                <div class="stat-item"><div class="stat-label">16% Trimmed Mean CPI</div><div class="stat-value gold" id="stat-trimmed">—</div><div class="stat-date" id="stat-trimmed-date"></div></div>
+                <div class="stat-item"><div class="stat-label">Headline CPI</div><div class="stat-value red" id="stat-headline">—</div><div class="stat-date" id="stat-headline-date"></div></div>
+                <div class="stat-item"><div class="stat-label">Fed Funds Rate</div><div class="stat-value blue" id="stat-ff">—</div><div class="stat-date" id="stat-ff-date"></div></div>
+                <div class="stat-item"><div class="stat-label">Robertson Target</div><div class="stat-value green">3.0%</div><div class="stat-date">End of 2026</div></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<footer>
+    <div class="container">
+        <p>Interactive visualization based on George Robertson's May 5, 2026 analysis.</p>
+        <p style="margin-top:4px;"><strong>Real-time data:</strong> Cleveland Fed 16% Trimmed-Mean CPI · BLS CPI-U · FRED (TRMMEANCPIM159SFRBCLE, CPIAUCSL, CPILFESL, FEDFUNDS)</p>
+        <p style="margin-top:4px;" id="footer-refresh">Data refreshes hourly. <strong>Not investment advice.</strong></p>
+    </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,11 +1,21 @@
 /* ===================== ROBERTSON DOCTRINE — APP.JS ===================== */
-/* Real-time FRED data integration + all interactive features */
+/* Real-time FRED data integration + WSJ Professional Theme */
 
 let liveData = null;
 let chartInstance = null;
 let spreadChartInstance = null;
 let currentView = 'long';
 let showFedFunds = false;
+
+const CHART_COLORS = {
+    trimmed: '#003366',    // WSJ Navy
+    headline: '#cc0000',   // WSJ Red
+    core: '#666666',       // WSJ Grey
+    fedfunds: '#006a9d',   // Financial Blue
+    grid: '#e0e0e0',
+    text: '#1a1a1a',
+    textMuted: '#666666'
+};
 
 // ==================== DATA FETCHING ====================
 async function fetchLiveData() {
@@ -24,12 +34,11 @@ async function fetchLiveData() {
         if (data.isOffline) {
             statusEl.textContent = 'OFFLINE / Fallback Data';
             dotEl.style.background = '#f59e0b'; // orange
-            barEl.style.borderBottomColor = '#f59e0b';
-            console.warn('[APP] Running in offline mode with fallback data.');
+            if (barEl) barEl.style.borderBottomColor = '#f59e0b';
         } else {
             statusEl.textContent = 'Live FRED Data Active';
             dotEl.style.background = '#10b981'; // green
-            barEl.style.borderBottomColor = 'var(--border)';
+            if (barEl) barEl.style.borderBottomColor = 'var(--border)';
         }
 
         tsEl.textContent = `Last update: ${new Date(data.timestamp).toLocaleTimeString()}`;
@@ -50,6 +59,7 @@ async function fetchLiveData() {
 }
 
 function formatDate(dateStr) {
+    if (!dateStr) return '';
     const d = new Date(dateStr + 'T00:00:00');
     return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
@@ -101,7 +111,7 @@ function updateInsight() {
     if (trimmedMean && headlineCPI) {
         const spread = (headlineCPI.value - trimmedMean.value).toFixed(1);
         const el = document.getElementById('insight-text');
-        el.innerHTML = `The 16% trimmed mean symmetrically drops outliers without fixed exclusions. With trimmed mean at <strong style="color:var(--text);">${trimmedMean.value.toFixed(1)}%</strong> (${formatDate(trimmedMean.date)}) vs. headline <strong style="color:var(--text);">${headlineCPI.value.toFixed(1)}%</strong>, the spread is <strong style="color:${spread > 0 ? 'var(--accent-2)' : 'var(--accent-3)'};">${spread > 0 ? '+' : ''}${spread}%</strong>. ${spread > 0 ? 'A positive spread suggests transitory shocks are inflating headline — the Fed has more room to cut.' : 'A negative spread is unusual — trimmed mean exceeding headline indicates broad-based price pressures.'}`;
+        el.innerHTML = `The 16% trimmed mean symmetrically drops outliers. With trimmed mean at <strong style="color:var(--text);">${trimmedMean.value.toFixed(1)}%</strong> vs. headline <strong style="color:var(--text);">${headlineCPI.value.toFixed(1)}%</strong>, the spread is <strong style="color:${spread > 0 ? 'var(--accent-2)' : 'var(--accent-3)'};">${spread > 0 ? '+' : ''}${spread}%</strong>. ${spread > 0 ? 'Positive spread suggests transitory shocks are inflating headline.' : 'Negative spread indicates broad price pressures.'}`;
     }
 }
 
@@ -127,12 +137,12 @@ function buildInflationChart() {
     const ctx = document.getElementById('inflationChart').getContext('2d');
     if (chartInstance) chartInstance.destroy();
     
-    const d = getFilteredData('long');
+    const d = getFilteredData(currentView);
     const datasets = [
-        { label: 'Headline CPI YoY', data: d.h, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.04)', borderWidth: 2, pointRadius: 0, tension: 0.3, fill: false },
-        { label: 'Core CPI YoY', data: d.c, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.04)', borderWidth: 2, pointRadius: 0, tension: 0.3, fill: false },
-        { label: '16% Trimmed Mean CPI YoY', data: d.t, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.06)', borderWidth: 3, pointRadius: 0, tension: 0.3, fill: false },
-        { label: 'Fed Funds Rate', data: d.ff, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.04)', borderWidth: 2, pointRadius: 0, tension: 0.1, fill: false, borderDash: [6, 3], hidden: !showFedFunds }
+        { label: 'Headline CPI (YoY)', data: d.h, borderColor: CHART_COLORS.headline, borderWidth: 1.5, pointRadius: 0, tension: 0, fill: false },
+        { label: 'Core CPI (YoY)', data: d.c, borderColor: CHART_COLORS.core, borderWidth: 1.5, pointRadius: 0, tension: 0, fill: false, borderDash: [4, 4] },
+        { label: '16% Trimmed Mean (YoY)', data: d.t, borderColor: CHART_COLORS.trimmed, borderWidth: 3, pointRadius: 0, tension: 0, fill: false },
+        { label: 'Fed Funds Rate', data: d.ff, borderColor: CHART_COLORS.fedfunds, backgroundColor: 'rgba(0,106,157,0.05)', borderWidth: 1.5, pointRadius: 0, tension: 0, fill: true, hidden: !showFedFunds }
     ];
     
     chartInstance = new Chart(ctx, {
@@ -141,30 +151,26 @@ function buildInflationChart() {
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: '#1f2937', titleColor: '#e5e7eb', bodyColor: '#e5e7eb',
-                    borderColor: '#374151', borderWidth: 1, padding: 12, cornerRadius: 8,
-                    callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}%` }
-                }
-            },
+            plugins: { legend: { display: false } },
             scales: {
-                x: { type: 'time', time: { unit: 'year', displayFormats: { year: 'yyyy', month: 'MMM yyyy' } },
-                    grid: { color: 'rgba(55,65,81,0.4)', drawBorder: false }, ticks: { color: '#9ca3af', font: { size: 11 } } },
-                y: { grid: { color: 'rgba(55,65,81,0.4)', drawBorder: false },
-                    ticks: { color: '#9ca3af', callback: v => v + '%', font: { size: 11 } },
-                    title: { display: true, text: 'Year-over-Year %', color: '#9ca3af', font: { size: 11 } } }
+                x: { type: 'time', time: { unit: 'year' }, grid: { display: false }, ticks: { color: CHART_COLORS.textMuted, font: { size: 10 } } },
+                y: { grid: { color: CHART_COLORS.grid }, ticks: { color: CHART_COLORS.textMuted, callback: v => v + '%' } }
             }
         }
     });
-    
-    // Build legend
+    renderLegend();
+}
+
+function renderLegend() {
     const legendEl = document.getElementById('chart-legend');
-    const colors = ['#ef4444', '#3b82f6', '#f59e0b', '#10b981'];
+    if (!legendEl) return;
     const labels = ['Headline CPI', 'Core CPI', '16% Trimmed Mean', 'Fed Funds Rate'];
+    const colors = [CHART_COLORS.headline, CHART_COLORS.core, CHART_COLORS.trimmed, CHART_COLORS.fedfunds];
     legendEl.innerHTML = labels.map((l, i) =>
-        `<div class="legend-item${i === 3 && !showFedFunds ? ' dimmed' : ''}" id="legend-${i}" onclick="toggleDataset(${i})"><div class="legend-dot" style="background:${colors[i]};${i === 3 ? 'border:2px dashed #10b981;background:transparent;' : ''}"></div><span>${l}</span></div>`
+        `<div class="legend-item${i === 3 && !showFedFunds ? ' dimmed' : ''}" onclick="toggleDataset(${i})">
+            <div class="legend-color" style="background:${colors[i]};${i === 1 ? 'border-top:2px dashed #fff;height:1px;margin:2px 0;' : ''}"></div>
+            <span>${l}</span>
+        </div>`
     ).join('');
 }
 
@@ -172,16 +178,13 @@ function buildSpreadChart() {
     const ctx = document.getElementById('spreadChart').getContext('2d');
     if (spreadChartInstance) spreadChartInstance.destroy();
     
-    // Compute headline - trimmed spread
+    const d = getFilteredData(currentView);
     const trimmedMap = {};
-    for (const d of liveData.series.trimmed) trimmedMap[d.date.slice(0, 7)] = d.value;
+    for (const p of d.t) trimmedMap[p.x] = p.y;
     
-    const spreadData = liveData.series.headline
-        .filter(d => trimmedMap[d.date.slice(0, 7)] !== undefined)
-        .map(d => ({
-            x: d.date,
-            y: parseFloat((d.value - trimmedMap[d.date.slice(0, 7)]).toFixed(2))
-        }));
+    const spreadData = d.h
+        .filter(p => trimmedMap[p.x] !== undefined)
+        .map(p => ({ x: p.x, y: parseFloat((p.y - trimmedMap[p.x]).toFixed(2)) }));
     
     spreadChartInstance = new Chart(ctx, {
         type: 'bar',
@@ -189,33 +192,17 @@ function buildSpreadChart() {
             datasets: [{
                 label: 'Headline − Trimmed Mean Spread',
                 data: spreadData,
-                backgroundColor: spreadData.map(d => d.y >= 0 ? 'rgba(16,185,129,0.6)' : 'rgba(239,68,68,0.6)'),
-                borderColor: spreadData.map(d => d.y >= 0 ? '#10b981' : '#ef4444'),
-                borderWidth: 1,
-                borderRadius: 2
+                backgroundColor: spreadData.map(p => p.y >= 0 ? 'rgba(0,128,128,0.6)' : 'rgba(153,0,0,0.6)'),
+                borderColor: spreadData.map(p => p.y >= 0 ? '#008080' : '#990000'),
+                borderWidth: 1
             }]
         },
         options: {
             responsive: true, maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: '#1f2937', titleColor: '#e5e7eb', bodyColor: '#e5e7eb',
-                    borderColor: '#374151', borderWidth: 1, padding: 12, cornerRadius: 8,
-                    callbacks: {
-                        label: ctx => {
-                            const v = ctx.parsed.y;
-                            return `Spread: ${v >= 0 ? '+' : ''}${v.toFixed(2)}% — ${v >= 0 ? 'Transitory shocks inflating headline' : 'Broad-based pressure'}`;
-                        }
-                    }
-                }
-            },
+            plugins: { legend: { display: false } },
             scales: {
-                x: { type: 'time', time: { unit: 'year' },
-                    grid: { color: 'rgba(55,65,81,0.3)', drawBorder: false }, ticks: { color: '#9ca3af' } },
-                y: { grid: { color: 'rgba(55,65,81,0.3)', drawBorder: false },
-                    ticks: { color: '#9ca3af', callback: v => (v >= 0 ? '+' : '') + v + '%' },
-                    title: { display: true, text: 'Headline − Trimmed Mean (pp)', color: '#9ca3af' } }
+                x: { type: 'time', time: { unit: 'year' }, grid: { display: false }, ticks: { color: CHART_COLORS.textMuted, font: { size: 10 } } },
+                y: { grid: { color: CHART_COLORS.grid }, ticks: { color: CHART_COLORS.textMuted, callback: v => (v >= 0 ? '+' : '') + v + '%' } }
             }
         }
     });

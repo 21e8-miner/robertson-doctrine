@@ -1,5 +1,7 @@
 # The Robertson Doctrine
 
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/21e8-miner/robertson-doctrine)
+
 > **Interactive monetary policy analysis dashboard** — live FRED data, Trimmed Mean CPI vs. Headline vs. Core, Taylor Rule calculator, and FOMC decision simulator.
 
 Based on George Robertson's May 5, 2026 analysis advocating for rules-based, data-driven monetary policy under a Warsh Fed.

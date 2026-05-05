@@ -27,6 +27,7 @@ async function fetchLiveData() {
         populateStats();
         buildCharts();
         populateTaylor();
+        initSimulator();
         updateInsight();
         
         console.log('[APP] Live data loaded:', liveData.latest);
@@ -292,30 +293,288 @@ function updateTaylor() {
     }
 }
 
-// ==================== COIN FLIP ====================
-let coinFlips = 0;
-const pastDecisions = [];
+// ==================== FOMC RATE PATH SIMULATOR ====================
+const FOMC_MEETINGS = ['Jan', 'Mar', 'May', 'Jul', 'Sep', 'Nov', 'Dec'];
+const CUT_BPS = 0.25;
+
+let simState = {
+    currentMeeting: 0,
+    cuts: 0,
+    holds: 0,
+    startingRate: 3.64,   // will be overridden by live data
+    currentRate: 3.64,
+    rateHistory: [],
+    decisions: [],
+    spinning: false
+};
+let ratePathChart = null;
+
+function initSimulator() {
+    // Use live Fed Funds if available
+    if (liveData && liveData.latest.fedFunds) {
+        simState.startingRate = liveData.latest.fedFunds.value;
+        simState.currentRate = simState.startingRate;
+    }
+    simState.rateHistory = [{ label: 'Start', rate: simState.currentRate }];
+    buildRatePathChart();
+    updateSimulatorUI();
+}
+
+function buildRatePathChart() {
+    const ctx = document.getElementById('ratePathChart').getContext('2d');
+    if (ratePathChart) ratePathChart.destroy();
+
+    const labels = ['Start', ...FOMC_MEETINGS];
+    const rates = new Array(labels.length).fill(null);
+    rates[0] = simState.currentRate;
+
+    ratePathChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Simulated Rate',
+                    data: rates,
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245,158,11,0.07)',
+                    borderWidth: 3,
+                    pointRadius: 6,
+                    pointBackgroundColor: rates.map((v, i) => {
+                        if (v === null) return 'transparent';
+                        const d = simState.decisions[i - 1];
+                        return d === 'cut' ? '#10b981' : d === 'hold' ? '#ef4444' : '#f59e0b';
+                    }),
+                    pointBorderColor: '#0a0e17',
+                    pointBorderWidth: 2,
+                    tension: 0.3,
+                    fill: true,
+                    spanGaps: false
+                },
+                {
+                    label: 'Robertson Target',
+                    data: new Array(labels.length).fill(3.0),
+                    borderColor: '#10b981',
+                    borderWidth: 1.5,
+                    borderDash: [6, 4],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0
+                },
+                {
+                    label: 'Starting Rate',
+                    data: new Array(labels.length).fill(simState.startingRate),
+                    borderColor: '#3b82f6',
+                    borderWidth: 1,
+                    borderDash: [3, 5],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0
+                }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#1f2937', titleColor: '#e5e7eb', bodyColor: '#e5e7eb',
+                    borderColor: '#374151', borderWidth: 1, padding: 10, cornerRadius: 8,
+                    callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2) ?? '—'}%` }
+                }
+            },
+            scales: {
+                x: { grid: { color: 'rgba(55,65,81,0.3)', drawBorder: false }, ticks: { color: '#9ca3af', font: { size: 11 } } },
+                y: {
+                    grid: { color: 'rgba(55,65,81,0.3)', drawBorder: false },
+                    ticks: { color: '#9ca3af', callback: v => v.toFixed(2) + '%', font: { size: 11 } },
+                    min: Math.max(0, simState.startingRate - 2.5),
+                    max: simState.startingRate + 0.5,
+                    title: { display: true, text: 'Fed Funds Rate (%)', color: '#9ca3af', font: { size: 11 } }
+                }
+            },
+            animation: { duration: 600, easing: 'easeInOutCubic' }
+        }
+    });
+}
+
+function updateGauge(cutPct) {
+    const needle = document.getElementById('gauge-needle');
+    const pctEl = document.getElementById('gauge-pct');
+    const subEl = document.getElementById('gauge-sub');
+    const total = simState.cuts + simState.holds;
+
+    // Needle: -90° = full hold (left), 0° = neutral (top), +90° = full cut (right)
+    const angle = (cutPct / 100) * 180 - 90;
+    needle.setAttribute('transform', `rotate(${angle} 110 110)`);
+
+    if (total === 0) {
+        pctEl.textContent = '—';
+        subEl.textContent = 'No flips yet';
+        return;
+    }
+
+    pctEl.textContent = cutPct.toFixed(0) + '% cut';
+    pctEl.style.color = cutPct >= 50 ? 'var(--accent-2)' : cutPct >= 30 ? 'var(--accent)' : 'var(--accent-3)';
+
+    const label = cutPct >= 70 ? '📉 Strong Robertson conviction'
+                : cutPct >= 50 ? '↘ Lean toward cuts'
+                : cutPct >= 30 ? '↔ Mixed signals'
+                : '📈 Fed holds — inflation sticky';
+    subEl.textContent = label;
+}
+
+function addLogEntry(meeting, decision, rate) {
+    const log = document.getElementById('decision-log');
+    const empty = log.querySelector('.log-empty');
+    if (empty) empty.remove();
+
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    const delta = decision === 'cut' ? `-${CUT_BPS * 100}bps` : 'Hold';
+    const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    entry.innerHTML = `
+        <span class="log-badge ${decision}">${decision.toUpperCase()}</span>
+        <span class="log-meta">${meeting} 2026 — ${delta}</span>
+        <span style="color:var(--text-muted);font-size:.72rem">${time}</span>
+        <span class="log-rate">${rate.toFixed(2)}%</span>
+    `;
+    log.insertBefore(entry, log.firstChild);
+
+    const count = document.getElementById('log-count');
+    const total = simState.cuts + simState.holds;
+    count.textContent = `(${total} decision${total !== 1 ? 's' : ''})`;
+}
+
+function updateSimulatorUI() {
+    const total = simState.cuts + simState.holds;
+    const cutPct = total > 0 ? (simState.cuts / total) * 100 : 50;
+
+    // Stats
+    document.getElementById('stat-cuts').textContent = simState.cuts;
+    document.getElementById('stat-holds').textContent = simState.holds;
+    document.getElementById('stat-terminal').textContent = simState.currentRate.toFixed(2) + '%';
+
+    const vsEl = document.getElementById('stat-vs-robertson');
+    const diff = simState.currentRate - 3.0;
+    vsEl.textContent = (diff >= 0 ? '+' : '') + diff.toFixed(2) + '%';
+    vsEl.style.color = Math.abs(diff) < 0.13 ? 'var(--accent-2)' : diff > 0 ? 'var(--accent-3)' : 'var(--accent-2)';
+
+    // Gauge
+    updateGauge(cutPct);
+}
+
+function updateRatePathChart(meetingIdx, decision) {
+    if (!ratePathChart) return;
+    const dataIdx = meetingIdx + 1; // offset for 'Start'
+    ratePathChart.data.datasets[0].data[dataIdx] = simState.currentRate;
+    // Update point colors
+    ratePathChart.data.datasets[0].pointBackgroundColor = ratePathChart.data.datasets[0].data.map((v, i) => {
+        if (v === null) return 'transparent';
+        const d = simState.decisions[i - 1];
+        return d === 'cut' ? '#10b981' : d === 'hold' ? '#ef4444' : '#f59e0b';
+    });
+    ratePathChart.update();
+}
+
 function flipCoin() {
+    if (simState.spinning) return;
+    if (simState.currentMeeting >= FOMC_MEETINGS.length) return;
+
+    simState.spinning = true;
     const coin = document.getElementById('coin');
-    const result = document.getElementById('coin-result');
+    const resultEl = document.getElementById('coin-result');
     const dots = document.querySelectorAll('#fomc-timeline .fomc-dot');
-    coinFlips = (coinFlips + 1) % dots.length;
+    const meetingName = FOMC_MEETINGS[simState.currentMeeting];
+
     const isCut = Math.random() > 0.5;
     const extraSpins = Math.floor(Math.random() * 3) + 3;
-    const rotation = extraSpins * 360 + (isCut ? 0 : 180) + (Math.random() - 0.5) * 60;
-    pastDecisions[coinFlips] = isCut;
+    const rotation = extraSpins * 360 + (isCut ? 0 : 180) + (Math.random() - 0.5) * 40;
     coin.style.transform = `rotateY(${rotation}deg)`;
+
     setTimeout(() => {
-        result.textContent = isCut ? 'FOMC Decision: CUT 25bps ▼' : 'FOMC Decision: HOLD —';
-        result.style.color = isCut ? 'var(--accent-2)' : 'var(--accent-3)';
-        dots.forEach((d, i) => {
-            d.classList.remove('active', 'cut', 'hold');
-            if (i < coinFlips) d.classList.add(pastDecisions[i] ? 'cut' : 'hold');
-            else if (i === coinFlips) d.classList.add('active');
-        });
-    }, 600);
+        const decision = isCut ? 'cut' : 'hold';
+        simState.decisions[simState.currentMeeting] = decision;
+
+        if (isCut) {
+            simState.cuts++;
+            simState.currentRate = parseFloat((simState.currentRate - CUT_BPS).toFixed(2));
+        } else {
+            simState.holds++;
+        }
+
+        // Update timeline dot
+        dots[simState.currentMeeting].classList.remove('active');
+        dots[simState.currentMeeting].classList.add(decision);
+        const bpsEl = document.getElementById(`fbps-${simState.currentMeeting}`);
+        if (bpsEl) bpsEl.textContent = isCut ? '-25' : '—';
+
+        // Advance meeting
+        simState.currentMeeting++;
+        if (simState.currentMeeting < dots.length) {
+            dots[simState.currentMeeting].classList.add('active');
+        }
+
+        // Result text
+        const delta = isCut ? '↓ −25bps' : '= Hold';
+        resultEl.textContent = `${meetingName}: ${isCut ? 'CUT' : 'HOLD'} ${delta} → ${simState.currentRate.toFixed(2)}%`;
+        resultEl.style.color = isCut ? 'var(--accent-2)' : 'var(--accent-3)';
+
+        // All meetings done
+        if (simState.currentMeeting >= FOMC_MEETINGS.length) {
+            const total = simState.cuts + simState.holds;
+            const totalCutsBps = simState.cuts * 25;
+            setTimeout(() => {
+                resultEl.textContent = `2026 Complete — ${simState.cuts} cuts (−${totalCutsBps}bps) → Terminal rate: ${simState.currentRate.toFixed(2)}%`;
+            }, 800);
+        }
+
+        updateRatePathChart(simState.currentMeeting - 1, decision);
+        addLogEntry(meetingName, decision, simState.currentRate);
+        updateSimulatorUI();
+
+        simState.spinning = false;
+    }, 700);
 }
+
+function resetSimulator() {
+    const rate = (liveData && liveData.latest.fedFunds) ? liveData.latest.fedFunds.value : 3.64;
+    simState = {
+        currentMeeting: 0,
+        cuts: 0,
+        holds: 0,
+        startingRate: rate,
+        currentRate: rate,
+        rateHistory: [{ label: 'Start', rate }],
+        decisions: [],
+        spinning: false
+    };
+
+    // Reset coin
+    document.getElementById('coin').style.transform = 'rotateY(0deg)';
+    document.getElementById('coin-result').textContent = 'Click the coin to simulate an FOMC decision';
+    document.getElementById('coin-result').style.color = 'var(--accent)';
+
+    // Reset dots
+    document.querySelectorAll('#fomc-timeline .fomc-dot').forEach((d, i) => {
+        d.classList.remove('cut', 'hold', 'active');
+        if (i === 0) d.classList.add('active');
+        const bps = document.getElementById(`fbps-${i}`);
+        if (bps) bps.textContent = '';
+    });
+
+    // Reset log
+    const log = document.getElementById('decision-log');
+    log.innerHTML = '<div class="log-empty">No decisions yet — flip the coin to begin</div>';
+    document.getElementById('log-count').textContent = '';
+
+    buildRatePathChart();
+    updateSimulatorUI();
+}
+
 window.flipCoin = flipCoin;
+window.resetSimulator = resetSimulator;
 
 // ==================== CARD FLIP ====================
 function flipCard(card) {

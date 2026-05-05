@@ -12,16 +12,27 @@ async function fetchLiveData() {
     const statusEl = document.getElementById('live-status');
     const dotEl = document.querySelector('.live-dot');
     const tsEl = document.getElementById('live-ts');
+    const barEl = document.getElementById('live-bar');
     
     try {
         statusEl.textContent = 'Fetching live FRED data…';
         const resp = await fetch('/api/data');
         if (!resp.ok) throw new Error(`Server error: ${resp.status}`);
-        liveData = await resp.json();
+        const data = await resp.json();
+        liveData = data;
         
-        dotEl.classList.add('connected');
-        statusEl.textContent = `FRED Live · ${liveData.meta.trimmedCount} trimmed mean · ${liveData.meta.headlineCount} CPI · ${liveData.meta.fedfundsCount} fed funds observations`;
-        tsEl.textContent = new Date(liveData.timestamp).toLocaleTimeString();
+        if (data.isOffline) {
+            statusEl.textContent = 'OFFLINE / Fallback Data';
+            dotEl.style.background = '#f59e0b'; // orange
+            barEl.style.borderBottomColor = '#f59e0b';
+            console.warn('[APP] Running in offline mode with fallback data.');
+        } else {
+            statusEl.textContent = 'Live FRED Data Active';
+            dotEl.style.background = '#10b981'; // green
+            barEl.style.borderBottomColor = 'var(--border)';
+        }
+
+        tsEl.textContent = `Last update: ${new Date(data.timestamp).toLocaleTimeString()}`;
         
         populateTickers();
         populateStats();
@@ -30,10 +41,9 @@ async function fetchLiveData() {
         initSimulator();
         updateInsight();
         
-        console.log('[APP] Live data loaded:', liveData.latest);
+        console.log('[APP] Data loaded:', liveData.latest);
     } catch (err) {
         console.error('[APP] Fetch error:', err);
-        dotEl.classList.remove('connected');
         statusEl.textContent = `Connection error: ${err.message}. Retrying in 10s…`;
         setTimeout(fetchLiveData, 10000);
     }

@@ -1,11 +1,13 @@
-// Load .env if present (dev convenience — not required in production)
-try { require('fs').existsSync('.env') && require('child_process').execSync(''); } catch (_) {}
-if (require('fs').existsSync('.env')) {
-    const lines = require('fs').readFileSync('.env', 'utf8').split('\n');
-    for (const line of lines) {
-        const m = line.match(/^([^#=]+)=(.*)$/);
-        if (m && !process.env[m[1].trim()]) process.env[m[1].trim()] = m[2].trim();
-    }
+// Load .env if present
+const fs = require('fs');
+if (fs.existsSync('.env')) {
+    const env = fs.readFileSync('.env', 'utf8');
+    env.split('\n').forEach(line => {
+        const [key, ...value] = line.split('=');
+        if (key && value.length > 0) {
+            process.env[key.trim()] = value.join('=').trim();
+        }
+    });
 }
 
 const express = require('express');
@@ -13,6 +15,7 @@ const fetch = require('node-fetch');
 const cors = require('cors');
 const path = require('path');
 const { version } = require('./package.json');
+const fallbackData = require('./data_fallback');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '8420', 10);
@@ -32,35 +35,62 @@ const FRED_API_KEY = process.env.FRED_API_KEY || null;
 
 /**
  * Fetch a FRED series as CSV and parse into {date, value} array
+ * Includes retry logic with exponential backoff to handle "socket hang up"
  */
-async function fetchFredCSV(seriesId, startDate = '2014-01-01') {
+async function fetchFredCSV(seriesId, startDate = '2014-01-01', retries = 3) {
     const params = new URLSearchParams({ id: seriesId, cosd: startDate, fq: 'Monthly' });
     if (FRED_API_KEY) params.set('api_key', FRED_API_KEY);
     const url = `${FRED_BASE}?${params}`;
-    console.log(`[FRED] Fetching ${seriesId}...`);
-    const resp = await fetch(url, {
-        headers: {
-            'User-Agent': 'RobertsonDoctrine/1.0 (Fed Analysis Dashboard)',
-            'Accept': 'text/csv'
-        }
-    });
-    if (!resp.ok) throw new Error(`FRED fetch failed for ${seriesId}: ${resp.status}`);
-    const text = await resp.text();
-    const lines = text.trim().split('\n');
-    const header = lines[0];
-    const data = [];
-    for (let i = 1; i < lines.length; i++) {
-        const parts = lines[i].split(',');
-        if (parts.length >= 2) {
-            const date = parts[0].trim();
-            const val = parseFloat(parts[1].trim());
-            if (!isNaN(val) && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                data.push({ date, value: val });
+    
+    const userAgents = [
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    ];
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            console.log(`[FRED] Fetching ${seriesId} (Attempt ${attempt}/${retries})...`);
+            const resp = await fetch(url, {
+                headers: {
+                    'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
+                    'Accept': 'text/csv'
+                },
+                timeout: 30000 // 30s timeout
+            });
+
+            if (!resp.ok) {
+                if (resp.status === 429 || resp.status >= 500) {
+                    throw new Error(`HTTP ${resp.status}`);
+                }
+                throw new Error(`FRED fetch failed for ${seriesId}: ${resp.status}`);
             }
+
+            const text = await resp.text();
+            const lines = text.trim().split('\n');
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const parts = lines[i].split(',');
+                if (parts.length >= 2) {
+                    const date = parts[0].trim();
+                    const val = parseFloat(parts[1].trim());
+                    if (!isNaN(val) && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                        data.push({ date, value: val });
+                    }
+                }
+            }
+            if (data.length === 0) throw new Error(`No valid data parsed for ${seriesId}`);
+            console.log(`[FRED] ${seriesId}: ${data.length} observations loaded (${data[0]?.date} to ${data[data.length-1]?.date})`);
+            return data;
+
+        } catch (err) {
+            console.warn(`[FRED] Attempt ${attempt} failed for ${seriesId}: ${err.message}`);
+            if (attempt === retries) throw err;
+            // Exponential backoff: 1s, 2s, 4s...
+            const delay = Math.pow(2, attempt - 1) * 1000 + (Math.random() * 500);
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
-    console.log(`[FRED] ${seriesId}: ${data.length} observations loaded (${data[0]?.date} to ${data[data.length-1]?.date})`);
-    return data;
 }
 
 /**
@@ -98,13 +128,14 @@ async function fetchAllData() {
     }
 
     try {
-        // Fetch all series in parallel
-        const [cpiLevels, coreLevels, trimmedYoY, fedfunds] = await Promise.all([
-            fetchFredCSV('CPIAUCSL', '2013-01-01'),      // Headline CPI (level index)
-            fetchFredCSV('CPILFESL', '2013-01-01'),       // Core CPI (level index)
-            fetchFredCSV('TRMMEANCPIM159SFRBCLE', '2014-01-01'), // 16% Trimmed Mean (already YoY %)
-            fetchFredCSV('FEDFUNDS', '2014-01-01')        // Fed Funds Rate (%)
-        ]);
+        // Fetch series sequentially to avoid triggering rate limits or "socket hang up"
+        const cpiLevels = await fetchFredCSV('CPIAUCSL', '2013-01-01');
+        await new Promise(resolve => setTimeout(resolve, 300)); // Small pause
+        const coreLevels = await fetchFredCSV('CPILFESL', '2013-01-01');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const trimmedYoY = await fetchFredCSV('TRMMEANCPIM159SFRBCLE', '2014-01-01');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const fedfunds = await fetchFredCSV('FEDFUNDS', '2014-01-01');
 
         // Compute YoY from level indices
         const headlineYoY = computeYoY(cpiLevels);
@@ -151,13 +182,21 @@ async function fetchAllData() {
         return result;
 
     } catch (err) {
-        console.error('[ERROR] Failed to fetch FRED data:', err.message);
+        console.error('[ERROR] Failed to fetch live FRED data:', err.message);
+        
         // Return cached data if available, even if stale
         if (dataCache) {
             console.log('[CACHE] Returning stale cached data due to fetch error');
             return dataCache;
         }
-        throw err;
+
+        // Return hardcoded fallback as absolute last resort
+        console.warn('[FALLBACK] Serving hardcoded data fallback');
+        return {
+            ...fallbackData,
+            timestamp: new Date().toISOString(),
+            isOffline: true
+        };
     }
 }
 

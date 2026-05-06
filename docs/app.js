@@ -8,13 +8,13 @@ let currentView = 'long';
 let showFedFunds = false;
 
 const CHART_COLORS = {
-    trimmed: '#003366',    // WSJ Navy
-    headline: '#cc0000',   // WSJ Red
-    core: '#666666',       // WSJ Grey
-    fedfunds: '#006a9d',   // Financial Blue
-    grid: '#e0e0e0',
-    text: '#1a1a1a',
-    textMuted: '#666666'
+    trimmed: '#00f2ff',    // Electric Cyan
+    headline: '#ffb700',   // Amber Gold
+    core: '#58a6ff',       // Soft Blue
+    fedfunds: '#10b981',   // Neon Green
+    grid: 'rgba(255, 255, 255, 0.05)',
+    text: '#f0f6fc',
+    textMuted: '#8b949e'
 };
 
 const FRED_PROXY = 'https://corsproxy.io/?';
@@ -47,13 +47,16 @@ async function fetchLiveData() {
         
         if (data.isOffline) {
             statusEl.textContent = 'OFFLINE / Fallback Data';
-            dotEl.style.background = '#f59e0b';
+            dotEl.style.background = 'var(--accent-2)'; // Amber
+            dotEl.classList.add('connected');
         } else if (data.isStatic) {
             statusEl.textContent = 'Live Direct Mode (Static)';
-            dotEl.style.background = '#006a9d';
+            dotEl.style.background = 'var(--accent)'; // Cyan
+            dotEl.classList.add('connected');
         } else {
             statusEl.textContent = 'Live Server Mode';
-            dotEl.style.background = '#10b981';
+            dotEl.style.background = '#10b981'; // Green
+            dotEl.classList.add('connected');
         }
 
         tsEl.textContent = `Last update: ${new Date(data.timestamp).toLocaleTimeString()}`;
@@ -223,7 +226,19 @@ function buildInflationChart() {
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { display: false } },
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(13, 17, 23, 0.9)',
+                    titleColor: '#fff',
+                    bodyColor: '#fff',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    padding: 12,
+                    cornerRadius: 8,
+                    backdropFilter: 'blur(4px)'
+                }
+            },
             scales: {
                 x: { type: 'time', time: { unit: 'year' }, grid: { display: false }, ticks: { color: CHART_COLORS.textMuted, font: { size: 10 } } },
                 y: { grid: { color: CHART_COLORS.grid }, ticks: { color: CHART_COLORS.textMuted, callback: v => v + '%' } }
@@ -405,14 +420,14 @@ function buildRatePathChart() {
                 {
                     label: 'Simulated Rate',
                     data: rates,
-                    borderColor: '#f59e0b',
-                    backgroundColor: 'rgba(245,158,11,0.07)',
+                    borderColor: 'var(--accent)',
+                    backgroundColor: 'rgba(0, 242, 255, 0.1)',
                     borderWidth: 3,
                     pointRadius: 6,
                     pointBackgroundColor: rates.map((v, i) => {
                         if (v === null) return 'transparent';
                         const d = simState.decisions[i - 1];
-                        return d === 'cut' ? '#10b981' : d === 'hold' ? '#ef4444' : '#f59e0b';
+                        return d === 'cut' ? 'var(--accent)' : d === 'hold' ? 'var(--accent-3)' : 'var(--accent-2)';
                     }),
                     pointBorderColor: '#0a0e17',
                     pointBorderWidth: 2,
